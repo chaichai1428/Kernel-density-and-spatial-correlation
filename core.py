@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial import distance_matrix
 import geopandas as gpd
+import os
+from matplotlib.colors import LinearSegmentedColormap
+from scipy.stats import gaussian_kde
 
 def load_poi_data(poi_file='data/元朗.csv'):
   """
@@ -86,7 +89,7 @@ def load_poi_data(poi_file='data/元朗.csv'):
     print("生成示例数据作为替代...")
     return load_sample_data()
 
-def load_boundary_data(boundary_file='data/yuanlang.shp'):
+def load_boundary_data(boundary_file='yuanlang.shp'):
   """
   Load boundary information from shapefile.
   
@@ -94,7 +97,8 @@ def load_boundary_data(boundary_file='data/yuanlang.shp'):
     boundary_file: Path to the boundary shapefile
     
   Returns:
-    GeoDataFrame with boundary geometry
+    tuple: (GeoDataFrame with boundary geometry, DataFrame with boundary points)
+           Returns (None, None) if file not found
   """
   try:
     # Read shapefile using geopandas
@@ -139,7 +143,8 @@ def load_boundary_data(boundary_file='data/yuanlang.shp'):
     
   except Exception as e:
     print(f"加载边界数据时出错: {e}")
-    return None, 
+    print("继续进行分析，但不显示边界...")
+    return None, None  # 返回两个None而不是一个
 
 def perform_kde_analysis(df, save_path=None):
   """
@@ -331,28 +336,200 @@ def visualize_with_boundary(poi_df, boundary_gdf, boundary_df, save_path=None):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
   plt.show()
 
+def ensure_directory_exists(path):
+  """
+  确保目录存在，如果不存在则创建
+  """
+  directory = os.path.dirname(path)
+  if directory and not os.path.exists(directory):
+    os.makedirs(directory)
+    print(f"创建目录: {directory}")
+
+def create_boundary_heatmap(poi_df, boundary_file='data/yuanlang.shp', save_path='yuenlong_with_boundary.png'):
+  """
+  创建带有正确元朗区边界的热力图
+  使用完整的shapefile文件(包含.shp、.shx、.dbf、.prj)
+  """
+  print(f"创建带边界的热力图，使用边界文件: {boundary_file}")
+  
+  # 检查文件是否存在
+  if not os.path.exists(boundary_file):
+    raise FileNotFoundError(f"边界文件不存在: {boundary_file}")
+  
+  # 创建高质量的图像
+  fig, ax = plt.subplots(figsize=(12, 10), dpi=300, facecolor='white')
+  
+  # 加载边界数据
+  print(f"正在加载边界文件: {boundary_file}")
+  boundary_gdf = gpd.read_file(boundary_file)
+  print(f"成功加载边界数据，包含 {len(boundary_gdf)} 条记录")
+  
+  # 确保坐标系统为WGS84
+  if boundary_gdf.crs and str(boundary_gdf.crs) != "EPSG:4326":
+    print(f"转换坐标系，从 {boundary_gdf.crs} 到 EPSG:4326")
+    boundary_gdf = boundary_gdf.to_crs("EPSG:4326")
+  
+  # 转换POI数据为GeoDataFrame
+  poi_gdf = gpd.GeoDataFrame(
+    poi_df, 
+    geometry=gpd.points_from_xy(poi_df.longitude, poi_df.latitude),
+    crs="EPSG:4326"
+  )
+  
+  # 使用边界确定范围
+  xmin, ymin, xmax, ymax = boundary_gdf.total_bounds
+  # 小边距
+  padding = 0.01
+  
+  # 创建紫色渐变色彩映射
+  colors = [(1, 1, 1, 0),          # 透明白色（最低密度）
+           (0.95, 0.9, 0.98, 0.3), # 超浅紫色（低密度） 
+           (0.9, 0.8, 0.95, 0.5),  # 浅紫色（中低密度）
+           (0.8, 0.5, 0.9, 0.7),   # 中紫色（中密度）
+           (0.6, 0.3, 0.7, 0.8),   # 深紫色（高密度）
+           (0.4, 0.1, 0.5, 0.9)]   # 暗紫色（最高密度）
+  purple_cmap = LinearSegmentedColormap.from_list('custom_purple', colors)
+  
+  # 绘制边界
+  boundary_gdf.boundary.plot(ax=ax, color='black', linewidth=1.5)
+  
+  # 创建网格并计算KDE
+  print("计算核密度估计...")
+  x = poi_gdf.geometry.x
+  y = poi_gdf.geometry.y
+  
+  xx, yy = np.mgrid[xmin-padding:xmax+padding:200j, 
+                    ymin-padding:ymax+padding:200j]
+  positions = np.vstack([xx.ravel(), yy.ravel()])
+  
+  # 获取核密度估计
+  kernel = gaussian_kde(np.vstack([x, y]), bw_method='scott')
+  z = np.reshape(kernel(positions), xx.shape)
+  
+  # 裁剪边界外的数据
+  try:
+    from shapely.geometry import Point
+    print("裁剪边界外的KDE值...")
+    boundary_shape = boundary_gdf.geometry.unary_union
+    
+    # 使用掩码方法更有效地裁剪
+    mask = np.zeros_like(z, dtype=bool)
+    step = 5  # 采样步长以加快速度
+    
+    for i in range(0, xx.shape[0], step):
+      for j in range(0, xx.shape[1], step):
+        point = Point(xx[i, j], yy[i, j])
+        in_boundary = boundary_shape.contains(point)
+        
+        # 设置该区域的掩码值
+        i_max = min(xx.shape[0], i + step)
+        j_max = min(xx.shape[1], j + step)
+        mask[i:i_max, j:j_max] = in_boundary
+    
+    # 应用掩码
+    z = np.where(mask, z, 0)
+  except Exception as e:
+    print(f"裁剪边界外的数据时出错: {e}")
+    print("继续使用未裁剪的数据")
+  
+  # 绘制热力图
+  contour_filled = ax.contourf(xx, yy, z, levels=20, cmap=purple_cmap, alpha=1.0)
+  
+  # 设置绘图范围
+  ax.set_xlim(xmin-padding, xmax+padding)
+  ax.set_ylim(ymin-padding, ymax+padding)
+  
+  # 移除坐标轴
+  ax.set_xticks([])
+  ax.set_yticks([])
+  
+  # 设置标题
+  title = plt.title('The spatial distribution of cultural and recreational facilities in Yuen Long District', 
+                   fontsize=14, pad=10)
+  
+  # 创建图例
+  legend_ax = fig.add_axes([0.13, 0.12, 0.2, 0.03])
+  legend_ax.set_title("Legend", fontsize=10, loc='left')
+  legend_ax.axis('off')
+  
+  # 创建渐变色带
+  gradient = np.linspace(0, 1, 100).reshape(1, -1)
+  gradient = np.vstack((gradient, gradient))
+  legend_ax.imshow(gradient, aspect='auto', cmap=purple_cmap)
+  
+  # 添加高低值标签
+  z_max = z.max()
+  legend_ax.text(-0.05, 0.5, f"低: 0", ha='right', va='center', fontsize=9)
+  legend_ax.text(1.05, 0.5, f"高: {z_max:.4f}", ha='left', va='center', fontsize=9)
+  
+  # 添加北箭头
+  north_ax = fig.add_axes([0.08, 0.2, 0.03, 0.07])
+  north_ax.axis('off')
+  north_ax.text(0.5, 0.1, 'N', ha='center', va='center', fontsize=12, fontweight='bold')
+  north_ax.arrow(0.5, 0.3, 0, 0.6, head_width=0.3, head_length=0.2, fc='k', ec='k')
+  
+  # 添加比例尺
+  scale_miles = 3  # 固定使用3英里
+  miles_to_deg = 0.0145  # 在香港纬度下的近似值
+  scale_deg = scale_miles * miles_to_deg
+  
+  # 创建比例尺
+  scale_ax = fig.add_axes([0.7, 0.12, 0.2, 0.03])
+  scale_ax.axis('off')
+  
+  # 绘制黑白刻度比例尺
+  segments = 6
+  segment_width = scale_deg / segments
+  for i in range(segments):
+    color = 'black' if i % 2 == 0 else 'white'
+    scale_ax.add_patch(plt.Rectangle(
+      (i * segment_width, 0), 
+      segment_width, 
+      0.2, 
+      facecolor=color,
+      edgecolor='black'
+    ))
+  
+  # 添加比例尺标签
+  scale_ax.text(0, -0.3, "0", ha='center', va='top', fontsize=8)
+  scale_ax.text(scale_deg/2, -0.3, f"{scale_miles/2}", ha='center', va='top', fontsize=8)
+  scale_ax.text(scale_deg, -0.3, f"{scale_miles}", ha='center', va='top', fontsize=8)
+  scale_ax.text(scale_deg/2, -0.6, "Miles", ha='center', va='top', fontsize=8)
+  
+  # 保存图像
+  try:
+    # 确保results目录存在
+    results_dir = os.path.dirname(save_path)
+    if results_dir and not os.path.exists(results_dir):
+      os.makedirs(results_dir)
+      print(f"创建目录: {results_dir}")
+    
+    print(f"保存图像到: {save_path}")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"图像已保存")
+  except Exception as e:
+    print(f"保存图像出错: {e}")
+    # 尝试保存到当前目录
+    alt_save_path = 'yuenlong_map.png'
+    plt.savefig(alt_save_path, dpi=300)
+    print(f"已保存到备用路径: {alt_save_path}")
+  
+  # 显示图像
+  plt.show()
+  return fig, ax
+
 def main():
-  # Load POI data
+  """
+  Main function to run the analysis pipeline.
+  """
+  # 加载POI数据
   poi_df = load_poi_data()
+  print(f"加载了 {len(poi_df)} 个POI点")
   
-  # Load boundary data
-  boundary_gdf, boundary_df = load_boundary_data()
-  
-  # Perform KDE analysis
-  perform_kde_analysis(poi_df)
-  
-  # Perform nearest neighbor analysis
-  results = nearest_neighbor_analysis(poi_df)
-  print(f"平均最近邻距离: {results['mean_distance']:.4f}")
-  print(f"理论随机分布的期望距离: {results['expected_distance']:.4f}")
-  print(f"R = {results['r_value']:.4f}, 表示分布模式为{results['pattern']}")
-  
-  # Visualize with boundary
-  if boundary_gdf is not None:
-    visualize_with_boundary(poi_df, boundary_gdf, boundary_df)
-  else:
-    # Fallback to regular visualization
-    visualize_point_distribution(poi_df)
+  # 创建带边界的热力图，使用data/yuanlang.shp
+  create_boundary_heatmap(poi_df, 
+                         boundary_file='data/yuanlang.shp', 
+                         save_path='results/yuenlong_with_boundary.png')
 
 if __name__ == "__main__":
   main()
