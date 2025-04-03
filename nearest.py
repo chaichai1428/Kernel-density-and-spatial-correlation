@@ -110,10 +110,10 @@ def nearest_neighbor_analysis(input_file=None, output_dir='results'):
   print(f"结论: 点的分布为{pattern} ({significance})")
   
   # 创建更大的图形以容纳不重叠的内容
-  fig = plt.figure(figsize=(12, 12))
+  fig = plt.figure(figsize=(14, 12))
   
-  # 给主图形分配更多的上部空间
-  main_ax = fig.add_axes([0.1, 0.4, 0.8, 0.5])  # [left, bottom, width, height]
+  # 给主图形分配更多的上部空间，减小宽度为右侧图例留出空间
+  main_ax = fig.add_axes([0.1, 0.4, 0.65, 0.5])  # [left, bottom, width, height]
   
   # 创建正态分布曲线
   x = np.linspace(-4, 4, 1000)
@@ -171,13 +171,25 @@ def nearest_neighbor_analysis(input_file=None, output_dir='results'):
   main_ax.text(-2.8, y_max*0.85, result_text, fontsize=12, va='top', fontweight='bold',
           bbox=dict(facecolor='white', alpha=0.5, boxstyle='round,pad=0.5'))
   
-  # 添加图例和临界值说明
-  legend_x = 1.15
-  main_ax.text(legend_x, y_max*0.9, 'Significance Level\n(p-value)', fontsize=12, ha='left')
-  main_ax.text(legend_x, y_max*0.75, '0.01\n0.05\n0.10\n0.10\n0.05\n0.01', fontsize=12, ha='left')
+  # 创建单独的图例区域，完全分离避免重叠
+  legend_ax = fig.add_axes([0.78, 0.4, 0.2, 0.5])  # 右侧图例区域
+  legend_ax.axis('off')  # 隐藏坐标轴
   
-  main_ax.text(legend_x, y_max*0.55, 'Critical Value\n(z-score)', fontsize=12, ha='left')
-  main_ax.text(legend_x, y_max*0.4, '< -2.58\n-2.58 - -1.96\n-1.96 - -1.65\n1.65 - 1.96\n1.96 - 2.58\n> 2.58', fontsize=12, ha='left')
+  # 添加图例标题
+  legend_ax.text(0, 0.95, 'Significance Level\n(p-value)', fontsize=12, ha='left', va='top')
+  
+  # 添加p值图例内容（从上到下排列）
+  p_values = ['0.01', '0.05', '0.10', '0.10', '0.05', '0.01']
+  for i, p in enumerate(p_values):
+    legend_ax.text(0, 0.85 - i*0.05, p, fontsize=12, ha='left')
+  
+  # 添加临界值图例标题（位置更低）
+  legend_ax.text(0, 0.55, 'Critical Value\n(z-score)', fontsize=12, ha='left', va='top')
+  
+  # 添加z-score图例内容
+  z_texts = ['< -2.58', '-2.58 - -1.96', '-1.96 - -1.65', '1.65 - 1.96', '1.96 - 2.58', '> 2.58']
+  for i, z in enumerate(z_texts):
+    legend_ax.text(0, 0.45 - i*0.05, z, fontsize=12, ha='left')
   
   # 添加点模式示例图 - 移到底部
   # 聚集模式 (左)
@@ -211,7 +223,7 @@ def nearest_neighbor_analysis(input_file=None, output_dir='results'):
   
   dispersed = np.array(dispersed_points)
   
-  # 创建三个示例子图 - 放在底部
+  # 创建三个示例子图 - 放在底部，均匀分布
   ax_c = fig.add_axes([0.1, 0.1, 0.25, 0.25])  # 左下角
   ax_r = fig.add_axes([0.375, 0.1, 0.25, 0.25])  # 中下角
   ax_d = fig.add_axes([0.65, 0.1, 0.25, 0.25])  # 右下角
