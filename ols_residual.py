@@ -260,7 +260,7 @@ def perform_ols_analysis():
 
   # 5. 可视化
   print("创建OLS残差可视化...")
-  fig, ax = plt.subplots(figsize=(12, 9), facecolor='white')  # 加大图形尺寸
+  fig, ax = plt.subplots(figsize=(12, 12), facecolor='white')  # 增加高度从9到12
 
   # 绘制边界
   boundary.boundary.plot(ax=ax, color='black', linewidth=1.0)
@@ -287,7 +287,7 @@ def perform_ols_analysis():
     print(f"类别 {cat}: 颜色 {color}")
   
   # 创建带Buffer的点几何
-  buffer_radius = (bounds[2] - bounds[0]) * 0.001  # 减少Buffer半径以避免过度重叠
+  buffer_radius = (bounds[2] - bounds[0]) * 0.003  # 改为3倍大小，从0.01改为0.003
   joined['buffered_geom'] = joined.geometry.buffer(buffer_radius)
 
   # 绘制每个类别
@@ -348,7 +348,7 @@ def perform_ols_analysis():
   ]
   
   # 创建表格1
-  ax_table1 = fig.add_axes([0.1, 0.1, 0.8, 0.15])  # [left, bottom, width, height]
+  ax_table1 = fig.add_axes([0.1, 0.05, 0.8, 0.15])  # 将表格1下移，y位置从0.1改为0.05
   ax_table1.axis('off')
   table1 = ax_table1.table(
       cellText=table_data,
@@ -361,7 +361,7 @@ def perform_ols_analysis():
   table1.scale(1, 1.5)
   
   # 创建表格2
-  ax_table2 = fig.add_axes([0.1, 0.01, 0.8, 0.08])  # [left, bottom, width, height]
+  ax_table2 = fig.add_axes([0.1, -0.05, 0.8, 0.08])  # 将表格2下移，y位置从0.01改为-0.05
   ax_table2.axis('off')
   table2 = ax_table2.table(
       cellText=table_data2,
