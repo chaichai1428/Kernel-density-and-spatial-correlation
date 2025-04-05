@@ -109,6 +109,9 @@ def nearest_neighbor_analysis(input_file=None, output_dir='results'):
     
   print(f"结论: 点的分布为{pattern} ({significance})")
   
+  print(f"观测平均距离: {mean_nearest_distance:.6f}")
+  print(f"期望平均距离: {expected_distance:.6f}")
+  
   # 创建更大的图形以容纳不重叠的内容
   fig = plt.figure(figsize=(14, 12))
   
