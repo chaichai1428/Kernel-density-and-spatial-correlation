@@ -19,7 +19,7 @@ ROAD_FILE = "data/yuanlangroad.shp"  # 道路数据
 BOUNDARY_FILE = "data/yuanlang.shp"  # 区域边界
 OUTPUT_FILE = "gwr_analysis_map.png"
 
-def calculate_betweenness(roads_gdf, sample_ratio=0.001):
+def calculate_betweenness(roads_gdf, sample_ratio=0.0001):
   """计算道路的中介中心性，使用采样方法提高效率"""
   print("计算道路中介中心性...")
   
@@ -159,7 +159,7 @@ def perform_gwr_analysis():
     # 检查是否有BIA800字段
     if 'BIA800' not in roads.columns:
       print("道路数据中没有BIA800字段，计算中介中心性")
-      roads = calculate_betweenness(roads, sample_ratio=0.001)
+      roads = calculate_betweenness(roads, sample_ratio=0.0001)
   except Exception as e:
     print(f"道路数据加载失败: {e}")
     return None
@@ -254,10 +254,10 @@ def perform_gwr_analysis():
   )
   
   # 使用不同颜色绘制道路
-  colors = ['#f7f7f7', '#fddbc7', '#f4a582', '#d6604d', '#b2182b']
+  road_colors = ['#f7f7f7', '#fddbc7', '#f4a582', '#d6604d', '#b2182b']
   for i, cat in enumerate(roads['BIA800_cat'].cat.categories):
     cat_roads = roads[roads['BIA800_cat'] == cat]
-    cat_roads.plot(ax=ax, color=colors[i], linewidth=0.8, alpha=0.7)
+    cat_roads.plot(ax=ax, color=road_colors[i], linewidth=0.8, alpha=0.7)
 
   # 绘制GWR系数（根据p值筛选显著区域）
   # 只显示p值小于0.05的点
@@ -271,13 +271,19 @@ def perform_gwr_analysis():
     significant['coeff_cat'] = pd.cut(significant['gwr_coeff'], bins=bins, labels=labels)
     
     # 使用不同颜色和大小绘制点
-    colors = ['#4d4d4d', '#878787', '#fc8d59', '#d73027']
+    point_colors = ['#4d4d4d', '#878787', '#fc8d59', '#d73027']
     sizes = [300, 200, 200, 300]
+    
+    # 创建图例的句柄和标签
+    legend_handles = []
+    legend_labels = []
     
     for i, cat in enumerate(labels):
       cat_points = significant[significant['coeff_cat'] == cat]
       if len(cat_points) > 0:
-        cat_points.plot(ax=ax, color=colors[i], markersize=sizes[i], alpha=0.7)
+        scatter = cat_points.plot(ax=ax, color=point_colors[i], markersize=sizes[i]/30, alpha=0.7)
+        legend_handles.append(plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=point_colors[i], markersize=sizes[i]/60))
+        legend_labels.append(cat)
   else:
     print("没有显著的GWR系数（p<0.05），显示所有点")
     joined.plot(
@@ -285,6 +291,36 @@ def perform_gwr_analysis():
       markersize=30, alpha=0.7,
       vmin=-0.000004, vmax=0.000006,
       legend=True, legend_kwds={'label': "GWR系数", 'shrink': 0.6}
+    )
+  
+  # 创建道路中介中心性的图例
+  road_legend_handles = []
+  road_legend_labels = []
+  for i, cat in enumerate(roads['BIA800_cat'].cat.categories):
+    road_legend_handles.append(plt.Line2D([0], [0], color=road_colors[i], lw=2))
+    road_legend_labels.append(cat)
+  
+  # 添加道路中介中心性图例
+  road_legend = ax.legend(
+    road_legend_handles, 
+    road_legend_labels,
+    title='道路中介中心性',
+    loc='lower right',
+    frameon=True
+  )
+  
+  # 如果有显著点，添加GWR系数图例
+  if len(significant) > 0:
+    # 将第一个图例添加到图中，并存储引用
+    ax.add_artist(road_legend)
+    
+    # 添加GWR系数图例
+    ax.legend(
+      legend_handles, 
+      legend_labels,
+      title='GWR系数',
+      loc='lower left',
+      frameon=True
     )
 
   # 添加北向指示
